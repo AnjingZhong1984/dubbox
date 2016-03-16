@@ -1,12 +1,12 @@
 /*
  * Copyright 1999-2011 Alibaba Group.
- *  
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *  
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- *  
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,22 +15,19 @@
  */
 package com.alibaba.dubbo.remoting.transport.mina;
 
-import org.apache.mina.common.ByteBuffer;
-import org.apache.mina.common.IoSession;
-import org.apache.mina.filter.codec.ProtocolCodecFactory;
-import org.apache.mina.filter.codec.ProtocolDecoder;
-import org.apache.mina.filter.codec.ProtocolDecoderOutput;
-import org.apache.mina.filter.codec.ProtocolEncoder;
-import org.apache.mina.filter.codec.ProtocolEncoderOutput;
-
 import com.alibaba.dubbo.common.Constants;
 import com.alibaba.dubbo.common.URL;
 import com.alibaba.dubbo.remoting.Channel;
-import com.alibaba.dubbo.remoting.Codec2;
 import com.alibaba.dubbo.remoting.ChannelHandler;
+import com.alibaba.dubbo.remoting.Codec2;
 import com.alibaba.dubbo.remoting.buffer.ChannelBuffer;
 import com.alibaba.dubbo.remoting.buffer.ChannelBuffers;
 import com.alibaba.dubbo.remoting.buffer.DynamicChannelBuffer;
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.*;
+
+import java.nio.ByteBuffer;
 
 /**
  * MinaCodecAdapter.
@@ -43,11 +40,11 @@ final class MinaCodecAdapter implements ProtocolCodecFactory {
 
     private final ProtocolDecoder decoder            = new InternalDecoder();
 
-    private final Codec2          codec;
+    private final Codec2 codec;
 
-    private final URL             url;
+    private final URL url;
 
-    private final ChannelHandler  handler;
+    private final ChannelHandler handler;
 
     private final int            bufferSize;
 
@@ -67,6 +64,16 @@ final class MinaCodecAdapter implements ProtocolCodecFactory {
         return decoder;
     }
 
+    @Override
+    public ProtocolEncoder getEncoder(IoSession session) throws Exception {
+        return encoder;
+    }
+
+    @Override
+    public ProtocolDecoder getDecoder(IoSession session) throws Exception {
+        return decoder;
+    }
+
     private class InternalEncoder implements ProtocolEncoder {
 
         public void dispose(IoSession session) throws Exception {
@@ -76,11 +83,11 @@ final class MinaCodecAdapter implements ProtocolCodecFactory {
             ChannelBuffer buffer = ChannelBuffers.dynamicBuffer(1024);
             MinaChannel channel = MinaChannel.getOrAddChannel(session, url, handler);
             try {
-            	codec.encode(channel, buffer, msg);
+                codec.encode(channel, buffer, msg);
             } finally {
                 MinaChannel.removeChannelIfDisconnectd(session);
             }
-            out.write(ByteBuffer.wrap(buffer.toByteBuffer()));
+            out.write(ByteBuffer.wrap(buffer.array()));
             out.flush();
         }
     }
@@ -89,7 +96,7 @@ final class MinaCodecAdapter implements ProtocolCodecFactory {
 
         private ChannelBuffer buffer = ChannelBuffers.EMPTY_BUFFER;
 
-        public void decode(IoSession session, ByteBuffer in, ProtocolDecoderOutput out) throws Exception {
+        public void decode(IoSession session, IoBuffer in, ProtocolDecoderOutput out) throws Exception {
             int readable = in.limit();
             if (readable <= 0) return;
 
@@ -97,16 +104,16 @@ final class MinaCodecAdapter implements ProtocolCodecFactory {
 
             if (buffer.readable()) {
                 if (buffer instanceof DynamicChannelBuffer) {
-                    buffer.writeBytes(in.buf());
+                    buffer.writeBytes(in.array());
                     frame = buffer;
                 } else {
                     int size = buffer.readableBytes() + in.remaining();
                     frame = ChannelBuffers.dynamicBuffer(size > bufferSize ? size : bufferSize);
                     frame.writeBytes(buffer, buffer.readableBytes());
-                    frame.writeBytes(in.buf());
+                    frame.writeBytes(in.array());
                 }
             } else {
-                frame = ChannelBuffers.wrappedBuffer(in.buf());
+                frame = ChannelBuffers.wrappedBuffer(in.array());
             }
 
             Channel channel = MinaChannel.getOrAddChannel(session, url, handler);
